@@ -4,64 +4,6 @@
   #:use-module (guix git-download)
   #:use-module (guix build-system emacs)
   #:use-module (gnu packages)
-  #:use-module (gnu packages admin)
-  #:use-module (gnu packages audio)
-  #:use-module (gnu packages bash)
-  #:use-module (gnu packages cmake)
-  #:use-module (gnu packages code)
-  #:use-module (gnu packages databases)
-  #:use-module (gnu packages dictionaries)
-  #:use-module (gnu packages emacs)
-  #:use-module (gnu packages guile)
-  #:use-module (gnu packages gtk)
-  #:use-module (gnu packages gnome)
-  #:use-module (gnu packages ncurses)
-  #:use-module (gnu packages python)
-  #:use-module (gnu packages python-xyz)
-  #:use-module (gnu packages tex)
-  #:use-module (gnu packages texinfo)
-  #:use-module (gnu packages tcl)
-  #:use-module (gnu packages tls)
-  #:use-module (gnu packages pkg-config)
-  #:use-module (gnu packages xorg)
-  #:use-module (gnu packages lesstif)
-  #:use-module (gnu packages llvm)
-  #:use-module (gnu packages image)
-  #:use-module (gnu packages linux)
-  #:use-module (gnu packages libevent)
-  #:use-module (gnu packages music)
-  #:use-module (gnu packages version-control)
-  #:use-module (gnu packages imagemagick)
-  #:use-module (gnu packages w3m)
-  #:use-module (gnu packages wget)
-  #:use-module (gnu packages autotools)
-  #:use-module (gnu packages base)
-  #:use-module (gnu packages compression)
-  #:use-module (gnu packages xml)
-  #:use-module (gnu packages glib)
-  #:use-module (gnu packages acl)
-  #:use-module (gnu packages mail)
-  #:use-module (gnu packages package-management)
-  #:use-module (gnu packages perl)
-  #:use-module (gnu packages pdf)
-  #:use-module (gnu packages scheme)
-  #:use-module (gnu packages speech)
-  #:use-module (gnu packages xiph)
-  #:use-module (gnu packages mp3)
-  #:use-module (gnu packages gettext)
-  #:use-module (gnu packages fribidi)
-  #:use-module (gnu packages gd)
-  #:use-module (gnu packages fontutils)
-  #:use-module (gnu packages password-utils)
-  #:use-module (gnu packages pulseaudio)
-  #:use-module (gnu packages sphinx)
-  #:use-module (gnu packages xdisorg)
-  #:use-module (gnu packages shells)
-  #:use-module (gnu packages sqlite)
-  #:use-module (gnu packages gnupg)
-  #:use-module (gnu packages video)
-  #:use-module (gnu packages haskell-xyz)
-  #:use-module (gnu packages wordnet)
   #:use-module (gnu packages emacs-xyz)
   #:use-module (guix utils)
   #:use-module (srfi srfi-1)
@@ -116,6 +58,106 @@ to errors.")
        `(#:tests? #f)) ; FIXME: Tests require ensime
       (home-page "https://github.com/hvesalai/emacs-scala-mode")
       (synopsis "Interact with scala inside emacs")
-      (description "The mode intends to provide basic emacs support for the Scala
-language, including local indenting, motion commands, and highlighting.")
+      (description "The mode intends to provide basic emacs support for the
+Scala language, including local indenting, motion commands, and highlighting.")
+      (license license:gpl3+))))
+
+(define-public emacs-treemacs-unstable
+  (let ((version "2.6")
+        (commit "81b69d9ee26326178cef08d5aef2811df4f659ed")
+        (revision "1"))
+    (package
+      (inherit emacs-treemacs)
+      (name "emacs-treemacs")
+      (version (git-version version revision commit))
+      (source (origin
+		(method git-fetch)
+		(uri (git-reference
+		      (url "https://github.com/Alexander-Miller/treemacs.git")
+		      (commit commit)))
+		(file-name (git-file-name name version))
+		(sha256
+		 (base32
+		  "138iw9sva5s6d2asl1ch0723q3q8zqlyllhxrac3phgmqzjdw68c"))))
+      (arguments
+       `(#:tests? #t ; TODO
+	 #:phases
+	 (modify-phases %standard-phases
+	   (add-after 'unpack 'fix-makefile
+	     (lambda _
+	       (substitute* "Makefile"
+		 (("@\\$\\(CASK\\) exec ") "")
+		 (("prepare\n") "\n")
+		 )
+	       #t))
+	   (add-after 'fix-makefile 'chdir-elisp
+	     ;; Elisp directory is not in root of the source.
+	     (lambda _
+	       (chdir "src/elisp")))
+	   (replace 'check
+	     (lambda _
+	       (with-directory-excursion "../.." ;treemacs root
+		 (chmod "test/test-treemacs.el" #o644)
+		 (emacs-substitute-sexps "test/test-treemacs.el"
+		   ("(describe \"treemacs--parse-collapsed-dirs\""
+		    ""))
+		 (invoke "make" "test"))))
+	   (add-before 'install 'patch-paths
+	     (lambda* (#:key inputs outputs #:allow-other-keys)
+	       (with-directory-excursion "../.." ;treemacs root
+		 (chmod "src/elisp/treemacs-core-utils.el" #o644)
+		 (emacs-substitute-variables "src/elisp/treemacs-core-utils.el"
+		   ("treemacs-dir"
+		    (string-append (assoc-ref outputs "out") "/")))
+		 (chmod "src/elisp/treemacs-icons.el" #o644)
+		 (substitute* "src/elisp/treemacs-icons.el"
+		   (("icons/default") "share/emacs-treemacs/images"))
+		 (chmod "src/elisp/treemacs-customization.el" #o644)
+		 (emacs-substitute-variables "src/elisp/treemacs-customization.el"
+		   ("treemacs-python-executable"
+		    (string-append (assoc-ref inputs "python") "/bin/python3")))
+		 (chmod "src/elisp/treemacs-async.el" #o644)
+		 (substitute* "src/elisp/treemacs-async.el"
+		   (("src/scripts") (string-append "share/" ,name "/scripts"))))
+	       #t))
+	   (add-after 'install 'install-data
+	     (lambda* (#:key outputs #:allow-other-keys)
+	       (let ((out (assoc-ref outputs "out")))
+		 (with-directory-excursion "../.." ;treemacs root
+		   (copy-recursively "icons/default"
+				     (string-append out "/share/" ,name "/images"))
+		   (copy-recursively
+		    "src/scripts"
+		    (string-append out "/share/" ,name "/scripts"))
+		   #t))))))))))
+
+(define-public emacs-lsp-treemacs
+  (let ((version "20200220")  ; no proper tag, use date of commit
+        (commit "2e3606eebfa8bd909b45b88e59d8eecc6afea4a2")
+        (revision "1"))
+    (package
+      (name "emacs-lsp-treemacs")
+      (version (git-version version revision commit))
+      (source (origin
+                (method git-fetch)
+                (uri (git-reference
+                      (url "https://github.com/emacs-lsp/lsp-treemacs")
+                      (commit commit)))
+                (file-name (git-file-name name version))
+                (sha256
+                 (base32
+                  "08xpf677jj1cnfkbpb148h3wld8lvlarp2yq89539nfcmajx53ch"))))
+      (build-system emacs-build-system)
+      (propagated-inputs
+       `(("emacs-dash" ,emacs-dash)
+         ("emacs-f" ,emacs-s)
+         ("emacs-ht" ,emacs-f)
+         ("emacs-treemacs" ,emacs-treemacs-unstable)
+         ("emacs-lsp-mode" ,emacs-lsp-mode)))
+      (arguments
+       `(#:tests? #f)) ; TODO
+      (home-page "https://github.com/emacs-lsp/lsp-treemacs")
+      (synopsis "Integrate lsp-mode and treemacs")
+      (description "Integration between lsp-mode and treemacs and implementation
+of treeview controls using treemacs as a tree renderer.")
       (license license:gpl3+))))
